@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Финансовый дашборд · Бизнес-клуб «Вектор»</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0d1a; --bg-2:#0f1326; --card:#141930; --card-h:#1a2040;
+    --border:#252b48; --border-strong:#34406a;
+    --text:#e8ebf7; --dim:#8891b0; --muted:#5d6685;
+    --accent:#6366f1; --accent-2:#a855f7;
+    --green:#10b981; --red:#ef4444; --yellow:#f59e0b;
+    --blue:#3b82f6; --pink:#ec4899; --cyan:#06b6d4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Segoe UI',sans-serif;
+    background:var(--bg);
+    background-image:
+      radial-gradient(at 0% 0%, rgba(99,102,241,0.18) 0%, transparent 45%),
+      radial-gradient(at 100% 0%, rgba(168,85,247,0.12) 0%, transparent 45%),
+      radial-gradient(at 50% 100%, rgba(16,185,129,0.06) 0%, transparent 50%);
+    background-attachment:fixed;
+    color:var(--text); min-height:100vh; padding:24px; font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .container{max-width:1440px;margin:0 auto}
+  a{color:inherit;text-decoration:none}
+
+  /* HEADER */
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand-icon{
+    width:46px;height:46px;border-radius:14px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:22px;color:#fff;
+    box-shadow:0 8px 24px rgba(99,102,241,0.35);
+  }
+  .brand h1{font-size:19px;font-weight:700;letter-spacing:-0.02em}
+  .brand p{font-size:12px;color:var(--dim);margin-top:2px}
+  .header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .badge{
+    padding:6px 12px;border-radius:999px;font-size:11px;font-weight:600;
+    background:rgba(245,158,11,0.12);color:var(--yellow);
+    border:1px solid rgba(245,158,11,0.3);text-transform:uppercase;letter-spacing:0.5px;
+  }
+  .badge.live{background:rgba(16,185,129,0.12);color:var(--green);border-color:rgba(16,185,129,0.3)}
+  .badge.loading{background:rgba(99,102,241,0.12);color:var(--accent);border-color:rgba(99,102,241,0.3)}
+  .btn{
+    padding:9px 14px;border-radius:10px;cursor:pointer;
+    background:var(--card);border:1px solid var(--border);
+    color:var(--text);font-size:13px;font-weight:500;
+    transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn:hover{background:var(--card-h);border-color:var(--border-strong)}
+  .btn.primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    border:none;color:#fff;font-weight:600;
+    box-shadow:0 4px 14px rgba(99,102,241,0.35);
+  }
+  .btn.primary:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(99,102,241,0.45)}
+
+  /* TABS */
+  .tabs{
+    display:flex;gap:4px;padding:4px;
+    background:var(--card);border:1px solid var(--border);
+    border-radius:12px;margin-bottom:16px;overflow-x:auto;
+  }
+  .tab{
+    padding:10px 16px;border-radius:8px;cursor:pointer;
+    background:transparent;border:none;color:var(--dim);
+    font-size:13px;font-weight:500;transition:all 0.15s;white-space:nowrap;
+  }
+  .tab:hover{color:var(--text)}
+  .tab.active{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;font-weight:600}
+
+  /* PERIOD */
+  .period-row{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+  .period-label{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-right:4px}
+  .period-btn{
+    padding:7px 14px;border-radius:8px;cursor:pointer;
+    background:var(--card);border:1px solid var(--border);
+    color:var(--dim);font-size:12px;font-weight:500;
+  }
+  .period-btn:hover{color:var(--text);border-color:var(--border-strong)}
+  .period-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* KPI */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+  .kpi{
+    padding:22px;border-radius:16px;
+    background:var(--card);border:1px solid var(--border);
+    position:relative;overflow:hidden;transition:all 0.2s;
+  }
+  .kpi:hover{border-color:var(--border-strong);transform:translateY(-2px)}
+  .kpi::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent)}
+  .kpi.fact::before{background:var(--green)}
+  .kpi.plan::before{background:var(--blue)}
+  .kpi.exec::before{background:var(--yellow)}
+  .kpi.delta::before{background:var(--accent-2)}
+  .kpi-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;font-weight:600}
+  .kpi-value{font-size:28px;font-weight:700;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;margin-bottom:6px}
+  .kpi-trend{font-size:12px;display:flex;align-items:center;gap:4px;color:var(--dim)}
+  .kpi-trend.up{color:var(--green)}
+  .kpi-trend.down{color:var(--red)}
+
+  /* GRID */
+  .grid{display:grid;gap:16px;margin-bottom:16px}
+  .grid-2{grid-template-columns:2fr 1fr}
+  .grid-2-eq{grid-template-columns:1fr 1fr}
+  .grid-3{grid-template-columns:repeat(3,1fr)}
+  .card{
+    padding:22px;border-radius:16px;
+    background:var(--card);border:1px solid var(--border);
+  }
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:12px;flex-wrap:wrap}
+  .card-title{font-size:14px;font-weight:600;letter-spacing:-0.01em}
+  .card-sub{font-size:12px;color:var(--dim);margin-top:2px}
+  .chart-wrap{position:relative;height:280px}
+  .chart-wrap.tall{height:320px}
+
+  /* DIRECTIONS LIST */
+  .dir-list{display:flex;flex-direction:column;gap:14px}
+  .dir-row{display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;align-items:baseline}
+  .dir-name{color:var(--text);font-weight:500;display:flex;align-items:center;gap:8px}
+  .dir-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .dir-amount{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+  .dir-pct{color:var(--dim);font-size:11px;margin-left:6px}
+  .dir-bar{height:6px;background:var(--bg-2);border-radius:3px;overflow:hidden;position:relative}
+  .dir-fill{height:100%;border-radius:3px;transition:width 0.4s}
+  .dir-marker{position:absolute;top:-2px;width:2px;height:10px;background:var(--text);opacity:0.5}
+
+  /* SUB DIRECTIONS TABLE */
+  .sub-list{display:flex;flex-direction:column}
+  .sub-item{
+    display:grid;grid-template-columns:1.5fr 1fr 1fr 0.8fr;gap:12px;align-items:center;
+    padding:11px 0;border-bottom:1px solid var(--border);font-size:13px;
+  }
+  .sub-item:last-child{border-bottom:none}
+  .sub-head{font-weight:600;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom-color:var(--border-strong)}
+  .sub-name{font-weight:500}
+  .sub-num{font-variant-numeric:tabular-nums;text-align:right}
+  .sub-pct{font-variant-numeric:tabular-nums;text-align:right;font-weight:600;padding:3px 8px;border-radius:6px;display:inline-block;justify-self:end}
+  .sub-pct.over{background:rgba(16,185,129,0.15);color:var(--green)}
+  .sub-pct.warn{background:rgba(245,158,11,0.15);color:var(--yellow)}
+  .sub-pct.under{background:rgba(239,68,68,0.15);color:var(--red)}
+
+  /* HEATMAP */
+  .heat-wrap{overflow-x:auto}
+  .heat{border-collapse:collapse;width:100%;font-size:12px}
+  .heat th, .heat td{padding:8px 6px;text-align:center;border:1px solid var(--bg-2)}
+  .heat th{color:var(--dim);font-weight:500;background:var(--bg-2);font-size:11px}
+  .heat td.label{text-align:left;font-weight:500;color:var(--text);min-width:200px;background:var(--bg-2);position:sticky;left:0}
+  .heat td.cell{font-variant-numeric:tabular-nums;font-weight:600;color:#fff;cursor:default;transition:transform 0.1s}
+  .heat td.cell:hover{transform:scale(1.05)}
+
+  /* SOURCE CARD */
+  .source-card{padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--border);margin-bottom:16px}
+  .input{
+    padding:10px 12px;border-radius:10px;
+    background:var(--bg-2);border:1px solid var(--border);
+    color:var(--text);font-size:13px;width:100%;
+  }
+  .input:focus{outline:none;border-color:var(--accent)}
+  .source-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .source-row .input{flex:1;min-width:240px}
+
+  /* MISC */
+  .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:13px}
+  .loader{display:inline-block;width:14px;height:14px;border:2px solid rgba(99,102,241,0.3);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  footer{text-align:center;margin-top:40px;color:var(--muted);font-size:12px}
+
+  @media (max-width:1000px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr)}
+    .grid-2,.grid-2-eq,.grid-3{grid-template-columns:1fr}
+  }
+  @media (max-width:600px){
+    body{padding:16px}
+    .kpi-value{font-size:22px}
+    .sub-item{grid-template-columns:1fr 1fr;font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <div class="brand-icon">В</div>
+      <div>
+        <h1>Финансовый дашборд</h1>
+        <p>Бизнес-клуб «Вектор» · План vs Факт 2025</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="badge loading" id="sourceBadge"><span class="loader"></span>Загрузка с Я.Диска</span>
+      <button class="btn" id="reloadBtn">Обновить</button>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-dir="all">Все направления</button>
+    <!-- остальные вкладки добавляются динамически из данных -->
+  </div>
+
+  <div class="period-row">
+    <span class="period-label">Группировка</span>
+    <button class="period-btn" data-period="month">По месяцам</button>
+    <button class="period-btn active" data-period="quarter">По кварталам</button>
+    <button class="period-btn" data-period="year">Год итог</button>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi fact">
+      <div class="kpi-label">Факт</div>
+      <div class="kpi-value" id="kpiFact">—</div>
+      <div class="kpi-trend" id="kpiFactTrend">—</div>
+    </div>
+    <div class="kpi plan">
+      <div class="kpi-label">План</div>
+      <div class="kpi-value" id="kpiPlan">—</div>
+      <div class="kpi-trend" id="kpiPlanTrend">—</div>
+    </div>
+    <div class="kpi exec">
+      <div class="kpi-label">Выполнение</div>
+      <div class="kpi-value" id="kpiExec">—</div>
+      <div class="kpi-trend" id="kpiExecTrend">Факт / план</div>
+    </div>
+    <div class="kpi delta">
+      <div class="kpi-label">Отклонение</div>
+      <div class="kpi-value" id="kpiDelta">—</div>
+      <div class="kpi-trend" id="kpiDeltaTrend">—</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">План vs Факт</div>
+          <div class="card-sub" id="trendSub">Динамика по периодам</div>
+        </div>
+      </div>
+      <div class="chart-wrap tall"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Структура факта</div>
+          <div class="card-sub">По направлениям</div>
+        </div>
+      </div>
+      <div class="chart-wrap tall"><canvas id="dirChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid grid-2-eq">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Выполнение плана по направлениям</div>
+          <div class="card-sub">Чёрная риска — 100%</div>
+        </div>
+      </div>
+      <div class="dir-list" id="dirList"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Под-направления</div>
+          <div class="card-sub" id="subSub">Топ по факту</div>
+        </div>
+      </div>
+      <div class="sub-list" id="subList">
+        <div class="sub-item sub-head">
+          <div>Источник дохода</div>
+          <div class="sub-num">План</div>
+          <div class="sub-num">Факт</div>
+          <div class="sub-num" style="text-align:right">%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Heatmap: выполнение плана по месяцам</div>
+        <div class="card-sub">Интенсивность цвета — % выполнения. Зелёный ≥100%, жёлтый 80–100%, красный &lt;80%</div>
+      </div>
+    </div>
+    <div class="heat-wrap">
+      <table class="heat" id="heat"></table>
+    </div>
+  </div>
+
+  <div class="source-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Источник данных</div>
+        <div class="card-sub">Папка Я.Диска с файлами <code style="background:var(--bg-2);padding:2px 6px;border-radius:4px">*_fact_*.xlsx</code> и <code style="background:var(--bg-2);padding:2px 6px;border-radius:4px">*_plan_*.xlsx</code></div>
+      </div>
+    </div>
+    <div class="source-row">
+      <input type="text" class="input" id="diskUrl" value="https://disk.yandex.ru/d/RG6o4QAHO5PLPA">
+      <button class="btn primary" id="diskFetchBtn">Подгрузить</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+      Парсер ищет лист с заголовками-месяцами, иерархия определяется по отступам в первой колонке.
+    </div>
+  </div>
+
+  <footer>
+    Обновлено: <span id="lastUpdate">—</span> ·
+    <a href="https://github.com/suntarme-glitch/fin-dashboard" target="_blank">GitHub</a>
+  </footer>
+</div>
+
+<script>
+const DEFAULT_DISK_URL = 'https://disk.yandex.ru/d/RG6o4QAHO5PLPA';
+const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const M_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+const QUARTERS = [['Q1',[0,1,2]],['Q2',[3,4,5]],['Q3',[6,7,8]],['Q4',[9,10,11]]];
+const DIR_COLORS = ['#6366f1','#10b981','#f59e0b','#ec4899','#06b6d4','#a855f7','#ef4444','#3b82f6','#8b5cf6','#22d3ee'];
+
+/* =========================================================
+   STATE
+   ========================================================= */
+// DATA = {
+//   directions: [{name, fact:[12], plan:[12], subs:[{name,fact:[12],plan:[12]}]}],
+//   monthsLabels: [...],
+// }
+let DATA = null;
+let currentDir = 'all';
+let currentPeriod = 'quarter';
+const charts = {};
+
+/* =========================================================
+   ПАРСЕР XLSX
+   ========================================================= */
+function parseSheet(rows){
+  // Найдём строку с месяцами
+  const norm = s => String(s||'').trim().toLowerCase();
+  let headIdx = -1;
+  let monthCols = [];
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const r = rows[i] || [];
+    const found = [];
+    for(let c=0;c<r.length;c++){
+      const idx = MONTHS.findIndex(m=>norm(r[c])===norm(m));
+      if(idx>=0) found.push({col:c, mIdx:idx});
+    }
+    if(found.length>=10){ headIdx = i; monthCols = found.sort((a,b)=>a.col-b.col); break; }
+  }
+  if(headIdx<0) throw new Error('Не нашёл строку заголовков с месяцами');
+
+  const directions = [];
+  let currentDirObj = null;
+  for(let i=headIdx+1;i<rows.length;i++){
+    const r = rows[i] || [];
+    const raw = r[0];
+    if(raw==null) continue;
+    const labelRaw = String(raw);
+    const label = labelRaw.trim();
+    if(!label) continue;
+    if(/итого\s+по\s+всем/i.test(label)) continue;
+
+    // Иерархия: подкатегория, если строка начинается с пробела/таба/неразрыв.пробела
+    const isSub = /^[\s ]/.test(labelRaw);
+    const values = monthCols.map(mc=>{
+      const v = r[mc.col];
+      const n = Number(String(v??'').replace(/\s/g,'').replace(',','.'));
+      return isFinite(n)?n:0;
+    });
+
+    if(!isSub){
+      currentDirObj = {name:label, fact:Array(12).fill(0), plan:Array(12).fill(0), subs:[], _raw:values};
+      directions.push(currentDirObj);
+    }else if(currentDirObj){
+      currentDirObj.subs.push({name:label, fact:Array(12).fill(0), plan:Array(12).fill(0), _raw:values});
+    }
+  }
+  return directions;
+}
+
+function combineFactPlan(factDirs, planDirs){
+  // Совмещаем по имени направления и под-направления
+  const map = new Map();
+  for(const d of factDirs){
+    map.set(d.name, {name:d.name, fact:d._raw.slice(0,12), plan:Array(12).fill(0), subs:new Map()});
+    for(const s of d.subs){
+      map.get(d.name).subs.set(s.name, {name:s.name, fact:s._raw.slice(0,12), plan:Array(12).fill(0)});
+    }
+  }
+  for(const d of planDirs){
+    if(!map.has(d.name)) map.set(d.name, {name:d.name, fact:Array(12).fill(0), plan:d._raw.slice(0,12), subs:new Map()});
+    else map.get(d.name).plan = d._raw.slice(0,12);
+    for(const s of d.subs){
+      const dir = map.get(d.name);
+      if(!dir.subs.has(s.name)) dir.subs.set(s.name, {name:s.name, fact:Array(12).fill(0), plan:s._raw.slice(0,12)});
+      else dir.subs.get(s.name).plan = s._raw.slice(0,12);
+    }
+  }
+  return [...map.values()].map(d=>({...d, subs:[...d.subs.values()]}));
+}
+
+async function readXlsx(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf,{type:'array',cellDates:false});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1, defval:'', raw:true});
+  return parseSheet(rows);
+}
+
+/* =========================================================
+   ЗАГРУЗКА С Я.ДИСКА
+   ========================================================= */
+async function fetchYandexDisk(publicUrl){
+  const apiList = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(publicUrl)}&limit=100`;
+  const list = await fetch(apiList).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+  if(!list._embedded || !list._embedded.items) throw new Error('Папка пуста или ссылка некорректна');
+  const xlsxItems = list._embedded.items.filter(i=>/\.xlsx?$/i.test(i.name));
+  if(!xlsxItems.length) throw new Error('В папке нет xlsx-файлов');
+
+  let factRaw = null, planRaw = null;
+  let factName = '', planName = '';
+  for(const it of xlsxItems){
+    const dlInfo = await fetch(`https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}&path=${encodeURIComponent('/'+it.name)}`).then(r=>r.json());
+    const blob = await fetch(dlInfo.href).then(r=>r.blob());
+    const file = new File([blob], it.name);
+    const parsed = await readXlsx(file);
+    const lname = it.name.toLowerCase();
+    if(lname.includes('fact') || lname.includes('факт')){ factRaw = parsed; factName = it.name; }
+    else if(lname.includes('plan') || lname.includes('план')){ planRaw = parsed; planName = it.name; }
+  }
+  if(!factRaw && !planRaw) throw new Error('Не найдены файлы fact/plan');
+  if(!factRaw) factRaw = [];
+  if(!planRaw) planRaw = [];
+  const directions = combineFactPlan(factRaw, planRaw);
+  return {directions, files:[factName, planName].filter(Boolean)};
+}
+
+/* =========================================================
+   АГРЕГАЦИЯ
+   ========================================================= */
+function fmt(n, suffix=' ₽'){
+  if(!isFinite(n)) return '—';
+  return new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(Math.round(n))+suffix;
+}
+function fmtCompact(n){
+  if(!isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if(abs>=1e6) return (n/1e6).toFixed(1).replace('.0','')+' млн';
+  if(abs>=1e3) return (n/1e3).toFixed(0)+'к';
+  return String(Math.round(n));
+}
+
+function getActiveDirections(){
+  if(!DATA) return [];
+  if(currentDir==='all') return DATA.directions;
+  return DATA.directions.filter(d=>d.name===currentDir);
+}
+
+function getPeriodSeries(){
+  // возвращает {labels:[], fact:[], plan:[]} для активных направлений
+  const dirs = getActiveDirections();
+  const monthFact = Array(12).fill(0);
+  const monthPlan = Array(12).fill(0);
+  for(const d of dirs){
+    for(let m=0;m<12;m++){ monthFact[m]+=d.fact[m]||0; monthPlan[m]+=d.plan[m]||0; }
+  }
+  if(currentPeriod==='month'){
+    return {labels:M_SHORT, fact:monthFact, plan:monthPlan};
+  }
+  if(currentPeriod==='quarter'){
+    const labels = QUARTERS.map(([n])=>n);
+    const fact = QUARTERS.map(([,ms])=>ms.reduce((s,i)=>s+monthFact[i],0));
+    const plan = QUARTERS.map(([,ms])=>ms.reduce((s,i)=>s+monthPlan[i],0));
+    return {labels, fact, plan};
+  }
+  return {labels:['Год'], fact:[monthFact.reduce((a,b)=>a+b,0)], plan:[monthPlan.reduce((a,b)=>a+b,0)]};
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function renderTabs(){
+  const tabs = document.getElementById('tabs');
+  // Удалим динамические
+  [...tabs.querySelectorAll('.tab[data-dir]:not([data-dir="all"])')].forEach(t=>t.remove());
+  for(const d of DATA.directions){
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.dataset.dir = d.name;
+    b.textContent = d.name;
+    b.onclick = ()=>{ currentDir = d.name; updateTabs(); render(); };
+    tabs.appendChild(b);
+  }
+  tabs.querySelector('[data-dir="all"]').onclick = ()=>{ currentDir='all'; updateTabs(); render(); };
+}
+function updateTabs(){
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.dir===currentDir);
+  });
+}
+
+function renderKPI(){
+  const dirs = getActiveDirections();
+  let fact=0, plan=0;
+  for(const d of dirs){ fact+=d.fact.reduce((a,b)=>a+b,0); plan+=d.plan.reduce((a,b)=>a+b,0); }
+  document.getElementById('kpiFact').textContent = fmt(fact);
+  document.getElementById('kpiPlan').textContent = fmt(plan);
+  const exec = plan>0 ? fact/plan*100 : 0;
+  document.getElementById('kpiExec').textContent = exec.toFixed(1)+'%';
+  const execEl = document.getElementById('kpiExecTrend');
+  if(exec>=100){ execEl.textContent='План перевыполнен'; execEl.className='kpi-trend up'; }
+  else if(exec>=95){ execEl.textContent='Близко к плану'; execEl.className='kpi-trend'; }
+  else { execEl.textContent='Недовыполнение плана'; execEl.className='kpi-trend down'; }
+  const delta = fact - plan;
+  document.getElementById('kpiDelta').textContent = (delta>=0?'+':'')+fmt(delta);
+  const dEl = document.getElementById('kpiDeltaTrend');
+  dEl.textContent = delta>=0?'Сверх плана':'Недополучено';
+  dEl.className = 'kpi-trend '+(delta>=0?'up':'down');
+  // Тренды KPI факт/план — сравним последние 2 квартала факта
+  const ser = getPeriodSeries();
+  if(ser.fact.length>=2){
+    const cur=ser.fact[ser.fact.length-1], prev=ser.fact[ser.fact.length-2];
+    const d = prev>0 ? (cur-prev)/prev*100 : 0;
+    const el = document.getElementById('kpiFactTrend');
+    el.textContent = `${d>=0?'↑':'↓'} ${Math.abs(d).toFixed(1)}% к пред. периоду`;
+    el.className = 'kpi-trend '+(d>=0?'up':'down');
+    document.getElementById('kpiPlanTrend').textContent = currentPeriod==='month'?'12 месяцев':currentPeriod==='quarter'?'4 квартала':'годовой план';
+  }
+}
+
+const baseChartOpts = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{
+    legend:{labels:{color:'#8891b0',font:{size:11},usePointStyle:true,padding:14}},
+    tooltip:{
+      backgroundColor:'#0f1326', borderColor:'#252b48', borderWidth:1,
+      titleColor:'#e8ebf7', bodyColor:'#8891b0', padding:10, cornerRadius:8,
+      callbacks:{label:(c)=>`${c.dataset.label}: ${fmt(c.parsed.y ?? c.parsed)}`}
+    }
+  },
+  scales:{
+    x:{grid:{color:'rgba(37,43,72,0.6)',drawBorder:false},ticks:{color:'#5d6685',font:{size:11}}},
+    y:{grid:{color:'rgba(37,43,72,0.6)',drawBorder:false},ticks:{color:'#5d6685',font:{size:11},callback:v=>fmtCompact(v)}}
+  }
+};
+function destroy(name){ if(charts[name]){ charts[name].destroy(); delete charts[name]; } }
+
+function renderTrend(){
+  destroy('trend');
+  const ser = getPeriodSeries();
+  const sub = currentPeriod==='month'?'Помесячная динамика':currentPeriod==='quarter'?'По кварталам':'Годовой итог';
+  document.getElementById('trendSub').textContent = sub;
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  const factGrad = ctx.createLinearGradient(0,0,0,300);
+  factGrad.addColorStop(0,'rgba(99,102,241,0.6)'); factGrad.addColorStop(1,'rgba(99,102,241,0.15)');
+  charts.trend = new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:ser.labels,
+      datasets:[
+        {label:'План', data:ser.plan, backgroundColor:'rgba(136,145,176,0.25)', borderColor:'rgba(136,145,176,0.5)', borderWidth:1, borderRadius:6, categoryPercentage:0.7, barPercentage:0.95},
+        {label:'Факт', data:ser.fact, backgroundColor:factGrad, borderColor:'#6366f1', borderWidth:1.5, borderRadius:6, categoryPercentage:0.7, barPercentage:0.95},
+      ]
+    },
+    options:baseChartOpts,
+  });
+}
+
+function renderDirChart(){
+  destroy('dir');
+  const dirs = DATA.directions;
+  const totals = dirs.map(d=>d.fact.reduce((a,b)=>a+b,0));
+  const total = totals.reduce((a,b)=>a+b,0) || 1;
+  const ctx = document.getElementById('dirChart').getContext('2d');
+  charts.dir = new Chart(ctx,{
+    type:'doughnut',
+    data:{
+      labels:dirs.map(d=>d.name),
+      datasets:[{
+        data:totals,
+        backgroundColor:dirs.map((_,i)=>DIR_COLORS[i%DIR_COLORS.length]),
+        borderColor:'#141930', borderWidth:2,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{
+        legend:{position:'bottom',labels:{color:'#8891b0',font:{size:11},usePointStyle:true,padding:10,boxWidth:8}},
+        tooltip:{
+          backgroundColor:'#0f1326',borderColor:'#252b48',borderWidth:1,
+          titleColor:'#e8ebf7',bodyColor:'#8891b0',padding:10,cornerRadius:8,
+          callbacks:{label:(c)=>`${c.label}: ${fmt(c.parsed)} (${(c.parsed/total*100).toFixed(1)}%)`}
+        }
+      }
+    }
+  });
+}
+
+function renderDirList(){
+  const list = document.getElementById('dirList');
+  const dirs = DATA.directions;
+  list.innerHTML = dirs.map((d,i)=>{
+    const fact = d.fact.reduce((a,b)=>a+b,0);
+    const plan = d.plan.reduce((a,b)=>a+b,0);
+    const pct = plan>0 ? fact/plan*100 : 0;
+    const color = DIR_COLORS[i%DIR_COLORS.length];
+    const fillW = Math.min(pct, 150); // визуально клипуем до 150%
+    const cls = pct>=100?'over':pct>=80?'warn':'under';
+    return `
+      <div class="dir-item">
+        <div class="dir-row">
+          <span class="dir-name"><span class="dir-dot" style="background:${color}"></span>${d.name}<span class="dir-pct">${fmt(fact)} / ${fmt(plan)}</span></span>
+          <span class="sub-pct ${cls}">${pct.toFixed(1)}%</span>
+        </div>
+        <div class="dir-bar">
+          <div class="dir-fill" style="width:${(fillW/150)*100}%;background:linear-gradient(90deg, ${color}, ${color}cc)"></div>
+          <div class="dir-marker" style="left:${(100/150)*100}%"></div>
+        </div>
+      </div>`;
+  }).join('') || '<div class="empty">Нет данных</div>';
+}
+
+function renderSubList(){
+  const list = document.getElementById('subList');
+  const dirs = getActiveDirections();
+  let subs = [];
+  for(const d of dirs) for(const s of d.subs) subs.push({...s, dir:d.name});
+  subs.sort((a,b)=> b.fact.reduce((x,y)=>x+y,0) - a.fact.reduce((x,y)=>x+y,0));
+  document.getElementById('subSub').textContent = currentDir==='all'?'Все направления, отсортированы по факту':`${currentDir}: под-направления`;
+  const head = `<div class="sub-item sub-head"><div>Источник дохода</div><div class="sub-num">План</div><div class="sub-num">Факт</div><div class="sub-num" style="text-align:right">%</div></div>`;
+  list.innerHTML = head + subs.slice(0,10).map(s=>{
+    const fact = s.fact.reduce((a,b)=>a+b,0);
+    const plan = s.plan.reduce((a,b)=>a+b,0);
+    const pct = plan>0 ? fact/plan*100 : 0;
+    const cls = pct>=100?'over':pct>=80?'warn':'under';
+    return `
+      <div class="sub-item">
+        <div>
+          <div class="sub-name">${s.name}</div>
+          ${currentDir==='all'?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${s.dir}</div>`:''}
+        </div>
+        <div class="sub-num">${fmt(plan)}</div>
+        <div class="sub-num">${fmt(fact)}</div>
+        <div class="sub-pct ${cls}">${pct.toFixed(1)}%</div>
+      </div>`;
+  }).join('');
+}
+
+function heatColor(pct){
+  // <80 красный, 80-100 жёлтый, >=100 зелёный, плавный градиент
+  if(!isFinite(pct)) return 'rgba(93,102,133,0.2)';
+  let h, l;
+  if(pct>=100){
+    const t = Math.min((pct-100)/30, 1);
+    h = 160; l = 40 - t*10; // зелёный → темнее при перевыполнении
+    return `hsl(${h},65%,${30+t*15}%)`;
+  }else if(pct>=80){
+    const t = (pct-80)/20;
+    return `hsl(${30+t*100},70%,${30+t*5}%)`; // оранжевый → жёлто-зелёный
+  }else{
+    const t = pct/80;
+    return `hsl(${0+t*30},70%,${25+t*8}%)`;
+  }
+}
+
+function renderHeatmap(){
+  const tbl = document.getElementById('heat');
+  const dirs = DATA.directions;
+  let html = '<thead><tr><th>Направление</th>';
+  for(const m of M_SHORT) html += `<th>${m}</th>`;
+  html += '<th>Σ %</th></tr></thead><tbody>';
+  for(const d of dirs){
+    html += `<tr><td class="label">${d.name}</td>`;
+    for(let i=0;i<12;i++){
+      const f = d.fact[i]||0, p = d.plan[i]||0;
+      const pct = p>0 ? f/p*100 : 0;
+      const bg = heatColor(pct);
+      const tip = `${MONTHS[i]}: факт ${fmt(f)} / план ${fmt(p)} = ${pct.toFixed(0)}%`;
+      html += `<td class="cell" style="background:${bg}" title="${tip}">${pct.toFixed(0)}%</td>`;
+    }
+    const totalF = d.fact.reduce((a,b)=>a+b,0), totalP = d.plan.reduce((a,b)=>a+b,0);
+    const totalPct = totalP>0 ? totalF/totalP*100 : 0;
+    html += `<td class="cell" style="background:${heatColor(totalPct)};font-weight:700">${totalPct.toFixed(0)}%</td></tr>`;
+  }
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
+function render(){
+  if(!DATA){ return; }
+  renderKPI();
+  renderTrend();
+  renderDirChart();
+  renderDirList();
+  renderSubList();
+  renderHeatmap();
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleString('ru-RU');
+}
+
+/* =========================================================
+   EVENTS
+   ========================================================= */
+document.querySelectorAll('.period-btn').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.period-btn').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  currentPeriod = t.dataset.period;
+  render();
+});
+
+async function loadFrom(url){
+  const badge = document.getElementById('sourceBadge');
+  badge.className='badge loading'; badge.innerHTML='<span class="loader"></span>Загрузка с Я.Диска';
+  try{
+    const {directions, files} = await fetchYandexDisk(url);
+    DATA = {directions};
+    renderTabs(); updateTabs(); render();
+    badge.className='badge live'; badge.textContent = `Live · ${files.length} файл(ов)`;
+  }catch(e){
+    badge.className='badge'; badge.textContent = 'Ошибка: '+e.message;
+    console.error(e);
+  }
+}
+
+document.getElementById('diskFetchBtn').onclick = ()=>loadFrom(document.getElementById('diskUrl').value.trim());
+document.getElementById('reloadBtn').onclick = ()=>loadFrom(document.getElementById('diskUrl').value.trim());
+
+// Автозагрузка при старте
+loadFrom(DEFAULT_DISK_URL);
+</script>
+</body>
+</html>
