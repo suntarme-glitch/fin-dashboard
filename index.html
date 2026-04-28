@@ -175,6 +175,18 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   footer{text-align:center;margin-top:40px;color:var(--muted);font-size:12px}
 
+  /* DIAG PANEL */
+  .diag{
+    margin-bottom:16px;padding:14px 16px;border-radius:12px;
+    background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.25);
+    font-size:12px;color:var(--dim);font-family:ui-monospace,Menlo,monospace;
+  }
+  .diag.err{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.4);color:#fca5a5}
+  .diag.ok{background:rgba(16,185,129,0.06);border-color:rgba(16,185,129,0.3);color:#6ee7b7}
+  .diag-stage{display:flex;align-items:center;gap:8px;padding:3px 0}
+  .diag-stage .ico{display:inline-block;width:14px;text-align:center}
+  .diag pre{margin-top:8px;padding:10px;background:var(--bg-2);border-radius:8px;color:#fca5a5;white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:160px;overflow:auto}
+
   @media (max-width:1000px){
     .kpi-grid{grid-template-columns:repeat(2,1fr)}
     .grid-2,.grid-2-eq,.grid-3{grid-template-columns:1fr}
@@ -202,6 +214,8 @@
       <button class="btn" id="reloadBtn">Обновить</button>
     </div>
   </header>
+
+  <div id="diag" class="diag" style="display:none"></div>
 
   <div class="tabs" id="tabs">
     <button class="tab active" data-dir="all">Все направления</button>
@@ -341,6 +355,49 @@ let currentPeriod = 'quarter';
 const charts = {};
 
 /* =========================================================
+   ДИАГНОСТИКА
+   ========================================================= */
+const diagEl = document.getElementById('diag');
+const diagStages = [];
+function diagShow(){ diagEl.style.display=''; }
+function diagReset(){ diagStages.length=0; diagEl.className='diag'; diagEl.innerHTML=''; }
+function diagStage(label, status='wait', extra=''){
+  const ico = status==='ok'?'✓':status==='err'?'✗':status==='wait'?'…':'•';
+  diagStages.push({label, status, ico, extra});
+  diagRender();
+}
+function diagUpdate(label, status, extra=''){
+  const s = diagStages.find(x=>x.label===label);
+  if(s){ s.status=status; s.ico = status==='ok'?'✓':status==='err'?'✗':'…'; s.extra=extra; }
+  diagRender();
+}
+function diagError(msg, stack){
+  diagEl.className='diag err';
+  diagEl.innerHTML = diagStages.map(s=>`<div class="diag-stage"><span class="ico">${s.ico}</span>${s.label}${s.extra?'  · '+s.extra:''}</div>`).join('') +
+    `<pre>${(msg||'')}\n${stack||''}</pre>` +
+    `<div style="margin-top:8px;color:var(--dim)">Открой DevTools (F12 → Console) для подробностей.</div>`;
+  diagShow();
+}
+function diagOk(msg){
+  diagEl.className='diag ok';
+  diagEl.innerHTML = diagStages.map(s=>`<div class="diag-stage"><span class="ico">${s.ico}</span>${s.label}${s.extra?'  · '+s.extra:''}</div>`).join('') +
+    `<div style="margin-top:8px">${msg}</div>`;
+  diagShow();
+  setTimeout(()=>{ diagEl.style.display='none'; }, 3500);
+}
+function diagRender(){
+  diagShow();
+  diagEl.innerHTML = diagStages.map(s=>`<div class="diag-stage"><span class="ico">${s.ico}</span>${s.label}${s.extra?'  · '+s.extra:''}</div>`).join('');
+}
+
+window.addEventListener('error', e=>{
+  diagError(e.message, e.error?.stack||e.filename+':'+e.lineno);
+});
+window.addEventListener('unhandledrejection', e=>{
+  diagError('Unhandled promise: '+(e.reason?.message||e.reason), e.reason?.stack);
+});
+
+/* =========================================================
    ПАРСЕР XLSX
    ========================================================= */
 function parseSheet(rows){
@@ -421,27 +478,64 @@ async function readXlsx(file){
    ЗАГРУЗКА С Я.ДИСКА
    ========================================================= */
 async function fetchYandexDisk(publicUrl){
+  if(typeof XLSX === 'undefined') throw new Error('SheetJS не загрузился (xlsx.full.min.js). Проверь сеть.');
+  if(typeof Chart === 'undefined') throw new Error('Chart.js не загрузился. Проверь сеть.');
+
+  diagStage('Получаю список файлов из папки', 'wait');
   const apiList = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(publicUrl)}&limit=100`;
-  const list = await fetch(apiList).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
-  if(!list._embedded || !list._embedded.items) throw new Error('Папка пуста или ссылка некорректна');
+  let listResp;
+  try{ listResp = await fetch(apiList); }
+  catch(e){ throw new Error('Сеть/CORS на cloud-api.yandex.net: '+e.message); }
+  if(!listResp.ok){
+    let body=''; try{body=await listResp.text();}catch(_){}
+    throw new Error('cloud-api.yandex.net HTTP '+listResp.status+' — '+body.slice(0,200));
+  }
+  const list = await listResp.json();
+  if(!list._embedded || !list._embedded.items) throw new Error('Папка пуста или ссылка не публичная');
   const xlsxItems = list._embedded.items.filter(i=>/\.xlsx?$/i.test(i.name));
-  if(!xlsxItems.length) throw new Error('В папке нет xlsx-файлов');
+  diagUpdate('Получаю список файлов из папки', 'ok', `найдено ${list._embedded.items.length} файла, xlsx: ${xlsxItems.length}`);
+  if(!xlsxItems.length) throw new Error('В папке нет xlsx-файлов. Файлы в папке: '+list._embedded.items.map(i=>i.name).join(', '));
 
   let factRaw = null, planRaw = null;
   let factName = '', planName = '';
   for(const it of xlsxItems){
-    const dlInfo = await fetch(`https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}&path=${encodeURIComponent('/'+it.name)}`).then(r=>r.json());
-    const blob = await fetch(dlInfo.href).then(r=>r.blob());
-    const file = new File([blob], it.name);
-    const parsed = await readXlsx(file);
+    diagStage(`Скачиваю ${it.name}`, 'wait');
+    let dlResp, blob;
+    try{
+      dlResp = await fetch(`https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}&path=${encodeURIComponent('/'+it.name)}`);
+      if(!dlResp.ok) throw new Error('HTTP '+dlResp.status);
+      const dlInfo = await dlResp.json();
+      const fileResp = await fetch(dlInfo.href);
+      if(!fileResp.ok) throw new Error('storage HTTP '+fileResp.status);
+      blob = await fileResp.blob();
+    }catch(e){
+      diagUpdate(`Скачиваю ${it.name}`, 'err', e.message);
+      throw new Error(`Не удалось скачать ${it.name}: ${e.message}`);
+    }
+    diagUpdate(`Скачиваю ${it.name}`, 'ok', `${(blob.size/1024).toFixed(1)} КБ`);
+
+    diagStage(`Парсю ${it.name}`, 'wait');
+    let parsed;
+    try{
+      const file = new File([blob], it.name);
+      parsed = await readXlsx(file);
+      diagUpdate(`Парсю ${it.name}`, 'ok', `направлений: ${parsed.length}`);
+    }catch(e){
+      diagUpdate(`Парсю ${it.name}`, 'err', e.message);
+      throw new Error(`Парсер ${it.name}: ${e.message}`);
+    }
+
     const lname = it.name.toLowerCase();
     if(lname.includes('fact') || lname.includes('факт')){ factRaw = parsed; factName = it.name; }
     else if(lname.includes('plan') || lname.includes('план')){ planRaw = parsed; planName = it.name; }
+    else { factRaw = factRaw||parsed; factName = factName||it.name; }
   }
-  if(!factRaw && !planRaw) throw new Error('Не найдены файлы fact/plan');
+  if(!factRaw && !planRaw) throw new Error('Не найдены файлы fact/plan по имени');
   if(!factRaw) factRaw = [];
   if(!planRaw) planRaw = [];
+  diagStage('Совмещаю план и факт', 'wait');
   const directions = combineFactPlan(factRaw, planRaw);
+  diagUpdate('Совмещаю план и факт', 'ok', `${directions.length} направлений`);
   return {directions, files:[factName, planName].filter(Boolean)};
 }
 
@@ -720,14 +814,19 @@ document.querySelectorAll('.period-btn').forEach(t=>t.onclick=()=>{
 async function loadFrom(url){
   const badge = document.getElementById('sourceBadge');
   badge.className='badge loading'; badge.innerHTML='<span class="loader"></span>Загрузка с Я.Диска';
+  diagReset();
   try{
     const {directions, files} = await fetchYandexDisk(url);
     DATA = {directions};
+    diagStage('Рендеринг', 'wait');
     renderTabs(); updateTabs(); render();
+    diagUpdate('Рендеринг', 'ok');
     badge.className='badge live'; badge.textContent = `Live · ${files.length} файл(ов)`;
+    diagOk(`Загружено: ${files.join(', ')}`);
   }catch(e){
-    badge.className='badge'; badge.textContent = 'Ошибка: '+e.message;
+    badge.className='badge'; badge.textContent = 'Ошибка: '+e.message.slice(0,60);
     console.error(e);
+    diagError(e.message, e.stack);
   }
 }
 
