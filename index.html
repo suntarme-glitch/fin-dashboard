@@ -477,6 +477,30 @@ async function readXlsx(file){
 /* =========================================================
    ЗАГРУЗКА С Я.ДИСКА
    ========================================================= */
+// Скачивание blob с фолбэком через CORS-прокси, если прямой fetch падает
+async function downloadBlob(href){
+  // 1. прямой fetch
+  try{
+    const r = await fetch(href, {redirect:'follow'});
+    if(r.ok) return await r.blob();
+    throw new Error('direct HTTP '+r.status);
+  }catch(directErr){
+    // 2. corsproxy.io — публичный CORS-прокси
+    try{
+      const proxied = 'https://corsproxy.io/?' + encodeURIComponent(href);
+      const r = await fetch(proxied);
+      if(r.ok) return await r.blob();
+      throw new Error('corsproxy HTTP '+r.status);
+    }catch(p1){
+      // 3. allorigins
+      const proxied2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(href);
+      const r = await fetch(proxied2);
+      if(r.ok) return await r.blob();
+      throw new Error(`Все способы упали: direct=${directErr.message}, corsproxy=${p1.message}, allorigins=HTTP ${r.status}`);
+    }
+  }
+}
+
 async function fetchYandexDisk(publicUrl){
   if(typeof XLSX === 'undefined') throw new Error('SheetJS не загрузился (xlsx.full.min.js). Проверь сеть.');
   if(typeof Chart === 'undefined') throw new Error('Chart.js не загрузился. Проверь сеть.');
@@ -500,14 +524,12 @@ async function fetchYandexDisk(publicUrl){
   let factName = '', planName = '';
   for(const it of xlsxItems){
     diagStage(`Скачиваю ${it.name}`, 'wait');
-    let dlResp, blob;
+    let blob;
     try{
-      dlResp = await fetch(`https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}&path=${encodeURIComponent('/'+it.name)}`);
+      const dlResp = await fetch(`https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}&path=${encodeURIComponent('/'+it.name)}`);
       if(!dlResp.ok) throw new Error('HTTP '+dlResp.status);
       const dlInfo = await dlResp.json();
-      const fileResp = await fetch(dlInfo.href);
-      if(!fileResp.ok) throw new Error('storage HTTP '+fileResp.status);
-      blob = await fileResp.blob();
+      blob = await downloadBlob(dlInfo.href);
     }catch(e){
       diagUpdate(`Скачиваю ${it.name}`, 'err', e.message);
       throw new Error(`Не удалось скачать ${it.name}: ${e.message}`);
